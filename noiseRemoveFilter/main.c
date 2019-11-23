@@ -24,7 +24,7 @@ int main() {
 
 	/*インプットファイルとアウトプットファイルの準備*/
 	char inputFileName[] = INPUT_FILE_NAME;
-	char* outputFileName = strJoin("mean_", inputFileName);
+	char* outputFileName = strJoin("mean2_", inputFileName);
 	if (!outputFileName) {
 		ret = 1;
 		goto END;
@@ -44,6 +44,10 @@ int main() {
 		goto END;
 	}
 
+	if (outputFileName) {
+		free(outputFileName);
+	}
+
 	/*構造体bitmapImageの作成*/
 	p8bitBitmapImage = bitmapImage();
 	if (!p8bitBitmapImage) {
@@ -60,7 +64,7 @@ int main() {
 	}
 
 	/*ノイズ除去*/
-	pOutputBitmapImage = BitmapImage_ReduceNoiseFilter(p8bitBitmapImage, MEAN , 3);
+	pOutputBitmapImage = BitmapImage_ReduceNoiseFilter(p8bitBitmapImage, MEDIAN , 3);
 
 	/*変換後のファイルを出力*/
 	error = BitmapImage_to8bitBitmapFile(pOutputBitmapImage, pOutputFile);
@@ -71,6 +75,18 @@ int main() {
 	}
 
 END:
+	if (pInputFile) {
+		fclose(pInputFile);
+	}
+	if (pOutputFile) {
+		fclose(pOutputFile);
+	}
+	if (p8bitBitmapImage) {
+		BitmapImageRelease(&p8bitBitmapImage);
+	}
+	if (pOutputBitmapImage) {
+		BitmapImageRelease(&pOutputBitmapImage);
+	}
 	_CrtDumpMemoryLeaks();
 	return 0;
 }

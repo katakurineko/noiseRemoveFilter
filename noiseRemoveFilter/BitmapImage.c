@@ -736,7 +736,7 @@ static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pIn
 				}
 			}
 			qsort(elementArray, elementsNumberOfKernel, sizeof(unsigned char), compareUnsignedChar);
-			memcpy(&pRetImgData[indexOfRetImg],&elementArray[elementsNumberOfKernel / 2],sizeof(char));
+			pRetImgData[indexOfRetImg] = elementArray[elementsNumberOfKernel / 2], sizeof(char);
 		}
 	}
 
