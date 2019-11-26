@@ -10,6 +10,7 @@
 #include "MyBool.h"
 #include "macroDefine.h"
 
+/*‰æ‘œ‚Ìî•ñ*/
 typedef struct {
 	unsigned long width;
 	long height;

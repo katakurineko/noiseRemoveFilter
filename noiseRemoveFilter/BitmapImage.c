@@ -10,7 +10,8 @@ static void writeBitmapFileHeader(BitmapImage* p8bitBitmapImage, FILE* pOutPutFi
 static void writeBitmapInfoHeader(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
 static void writeColorPaletteOf8bitGrayScale(FILE* pOutPutFile);
 static void writeImageDataOf8bitBitmap(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
-static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize);
+static MY_ERROR_CODE meanNoiseFilter_NotEfficient(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize);
+static MY_ERROR_CODE meanNoiseFilter_Efficient1(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize);
 static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize);
 
 /*空のBitmapImage構造体を返す関数*/
@@ -174,7 +175,7 @@ BitmapImage* BitmapImageReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReducti
 	switch (filterType)
 	{
 	case MEAN:
-		error = meanNoiseFilter(pReturnImg, pInputImg, kernelSize);
+		error = meanNoiseFilter_NotEfficient(pReturnImg, pInputImg, kernelSize);
 		if (error) {
 			goto error;
 		}
@@ -200,8 +201,8 @@ error:
 	return NULL;
 }
 
-/*平均値法によるノイズ除去処理を行う関数*/
-static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize) {
+/*平均値法によるノイズ除去処理を行う関数(高速化なし)*/
+static MY_ERROR_CODE meanNoiseFilter_NotEfficient(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize) {
 
 	MyErrorCode ret = SUCCESS;
 
@@ -267,7 +268,7 @@ static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInpu
 	unsigned long numberOfLoopOfY = height - (kernelSize - 1);
 	unsigned long numberOfLoopOfX = width - (kernelSize - 1);
 
-	for (unsigned long y = 0; y < numberOfLoopOfY; y++ , rowIndexStart += lineFeed) {
+	for (unsigned long y = 0; y < numberOfLoopOfY; y++, rowIndexStart += lineFeed) {
 
 		for (unsigned long x = 0; x < numberOfLoopOfX; x++) {
 			index = x + rowIndexStart;
@@ -279,6 +280,127 @@ static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInpu
 				}
 			}
 			pRetImgData[index + paddingSizeByFilter + lineFeed * paddingSizeByFilter] = (char)(sumInKernel / elementsNumberOfKernel);
+		}
+	}
+
+END:
+	return ret;
+}
+
+/*平均値法によるノイズ除去処理を行う関数*/
+static MY_ERROR_CODE meanNoiseFilter_Efficient1(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize) {
+
+	MyErrorCode ret = SUCCESS;
+
+	unsigned long height = abs(pInputImg->height);
+	unsigned long width = pInputImg->width;
+
+	/*引数チェック*/
+	if (!pReturnImg || !pInputImg) {
+		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
+		ret = ARGUMENT_ERROR;
+		goto END;
+	}
+	if (8 != pReturnImg->bitCount || 8 != pInputImg->bitCount) {
+		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
+		ret = ARGUMENT_ERROR;
+		goto END;
+	}
+	if (NOT_COMPRESSION != pReturnImg->compression || NOT_COMPRESSION != pInputImg->compression) {
+		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
+		ret = ARGUMENT_ERROR;
+		goto END;
+	}
+	if (0 == kernelSize % 2) {
+		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
+		ret = ARGUMENT_ERROR;
+		goto END;
+	}
+	if (kernelSize > height || kernelSize > width) {
+		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
+		ret = ARGUMENT_ERROR;
+		goto END;
+	}
+
+	/*ピクセル数を計算*/
+	unsigned long numberOfPixel = width * height;
+
+	/*画像領域の確保*/
+	char* pRetImgData = (char*)malloc(numberOfPixel);
+	if (!pRetImgData) {
+		ret = MALLOC_ERROR;
+		free(pRetImgData);
+		printErrorMessage(MALLOC_ERROR, __FILE__, __LINE__);
+		goto END;
+	}
+	memset(pRetImgData, 0x00, numberOfPixel);
+	pReturnImg->pImageData = pRetImgData;
+
+	unsigned char* pInpImaData = pInputImg->pImageData;
+
+	unsigned long lineFeed = width;
+	unsigned long indexOfRowStartInImage = 0;
+	unsigned long indexOfRowStartInKernel = 0;
+	unsigned long indexOfRowEndInKernel = 0;
+
+	/*カーネルの要素数*/
+	unsigned long elementsNumberOfKernel = kernelSize * kernelSize;
+
+	/*カーネル内の輝度値の合計*/
+	unsigned long sumInKernel = 0;
+
+	/*フィルタをかけたことによって削れる画像端のサイズ*/
+	unsigned long paddingSizeByFilter = (kernelSize - 1) / 2;
+
+	/*縦方向と横方向、それぞれのループ回数*/
+	unsigned long numberOfLoopOfY = height - (kernelSize - 1);
+	unsigned long numberOfLoopOfX = width - (kernelSize - 1);
+
+	/*プログラムの高速化のための変数*/
+	unsigned long addPart = 0;
+	unsigned long removePart = 0;
+
+	/*インプット画像からアウトプット画像へのindex補正*/
+	unsigned long indexCorrectionFromInpToOut = 0;
+
+	for (unsigned long y = 0; y < numberOfLoopOfY; y++, indexOfRowStartInImage += lineFeed) {
+
+		indexCorrectionFromInpToOut = indexOfRowStartInImage + paddingSizeByFilter + paddingSizeByFilter * lineFeed;
+
+		/*行の中で最初のカーネルの計算*/
+		indexOfRowStartInKernel = y * lineFeed;
+		sumInKernel = 0;
+		removePart = 0;
+		for (unsigned long yOfKarnel = 0; yOfKarnel < kernelSize; yOfKarnel++, indexOfRowStartInKernel += lineFeed) {
+			removePart += pInpImaData[indexOfRowStartInKernel];
+			for (unsigned long xOfKarnel = 0; xOfKarnel < kernelSize; xOfKarnel++) {
+				sumInKernel += pInpImaData[indexOfRowStartInKernel + xOfKarnel];
+			}
+		}
+		pRetImgData[indexCorrectionFromInpToOut] = (char)(sumInKernel / elementsNumberOfKernel);
+
+		for (unsigned long x = 1; x < numberOfLoopOfX; x++) {
+
+			/*前回計算したカーネル内の輝度値の合計に足す値を計算*/
+			indexOfRowEndInKernel = indexOfRowStartInImage + x + kernelSize - 1;
+			addPart = 0;
+			for (unsigned long yOfKarnel = 0; yOfKarnel < kernelSize; yOfKarnel++, indexOfRowEndInKernel += lineFeed) {
+				addPart += pInpImaData[indexOfRowEndInKernel];
+			}
+
+			/*カーネル内の輝度値の合計を計算*/
+			sumInKernel = sumInKernel + addPart - removePart;
+
+			/*平均を計算して、出力画像へ*/
+			pRetImgData[x + indexCorrectionFromInpToOut] = (char)(sumInKernel / elementsNumberOfKernel);
+
+			/*前回計算したカーネル内の輝度値の合計から引く値を計算*/
+			indexOfRowStartInKernel = indexOfRowStartInImage + x;
+			removePart = 0;
+			for (unsigned long yOfKarnel = 0; yOfKarnel < kernelSize; yOfKarnel++, indexOfRowStartInKernel += lineFeed) {
+				removePart += pInpImaData[indexOfRowStartInKernel];
+			}
+
 		}
 	}
 
@@ -364,7 +486,7 @@ static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pIn
 
 	unsigned long count = 0;
 
-	for (unsigned long y = 0; y < numberOfLoopOfY; y++ , rowIndexStart += lineFeed) {
+	for (unsigned long y = 0; y < numberOfLoopOfY; y++, rowIndexStart += lineFeed) {
 
 		for (unsigned long x = 0; x < numberOfLoopOfX; x++) {
 			index = x + rowIndexStart;

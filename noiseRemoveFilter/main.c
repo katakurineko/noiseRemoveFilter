@@ -4,6 +4,9 @@
 #include <crtdbg.h>
 #define new  ::new(_NORMAL_BLOCK, __FILE__, __LINE__)
 
+#include <stdio.h>
+#include <time.h>
+
 #include"BitmapImage.h"
 #include "MyErrorCodes.h"
 #include "commonFunctions.h"
@@ -63,13 +66,23 @@ int main() {
 		goto END;
 	}
 
-	/*ノイズ除去*/
-	pOutputBitmapImage = BitmapImageReduceNoiseFilter(p8bitBitmapImage, MEDIAN ,3);
-	if (!pOutputBitmapImage) {
-		/*除去に失敗した場合の処理*/
-		ret = 1;
-		goto END;
+	/*時間を計測*/
+	clock_t start;
+	clock_t end;
+	start = clock();
+	for (int i = 0; i < 10000; i++) {
+
+		/*ノイズ除去*/
+		pOutputBitmapImage = BitmapImageReduceNoiseFilter(p8bitBitmapImage, MEAN, 3);
+		if (!pOutputBitmapImage) {
+			/*除去に失敗した場合の処理*/
+			ret = 1;
+			goto END;
+		}
+
 	}
+	end = clock();
+	printf("%.4f秒\n", (double)(end - start) / CLOCKS_PER_SEC);
 
 	/*変換後のファイルを出力*/
 	error = BitmapImageTo8bitBitmapFile(pOutputBitmapImage, pOutputFile);
