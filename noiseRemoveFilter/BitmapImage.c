@@ -10,9 +10,6 @@ static void writeBitmapFileHeader(BitmapImage* p8bitBitmapImage, FILE* pOutPutFi
 static void writeBitmapInfoHeader(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
 static void writeColorPaletteOf8bitGrayScale(FILE* pOutPutFile);
 static void writeImageDataOf8bitBitmap(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
-static MyErrorCode prewittFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg);
-static MyErrorCode sobelFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg);
-static MyErrorCode LogFilter5(BitmapImage* pReturnImg, BitmapImage* pInputImg);
 static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize);
 static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg, unsigned long kernelSize);
 
@@ -50,7 +47,7 @@ void BitmapImageRelease(BitmapImage** ppBitmapImage) {
 }
 
 /*引数pFileにbmp画像ファイルを渡すと、引数pBitmapImageへ必要な情報を読み込む関数*/
-MY_ERROR_CODE BitmapImage_load(BitmapImage* pBitmapImage, FILE* pFile) {
+MY_ERROR_CODE BitmapImageLoad(BitmapImage* pBitmapImage, FILE* pFile) {
 	MY_ERROR_CODE ret = SUCCESS;
 
 	/*ファイルがbitmapか判定*/
@@ -100,7 +97,7 @@ END:
 }
 
 /*8bitの画像ファイルを出力する関数*/
-MY_ERROR_CODE BitmapImage_to8bitBitmapFile(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile) {
+MY_ERROR_CODE BitmapImageTo8bitBitmapFile(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile) {
 
 	MY_ERROR_CODE ret = SUCCESS;
 
@@ -129,358 +126,6 @@ END:
 }
 
 /*
-エッジ検出を行う関数
-【引数】
-	[i] BitmapImage*		エッジ検出を行いたい画像データ（8bit形式）
-	[i] MyEdgeFilterType	エッジ検出を行うフィルタの種類
-【返り値】
-	[o] BitmapImage*		エッジ検出を行った結果の画像データ（8bit形式）
-*/
-BitmapImage* BitmapImage_EdgeDetecter(BitmapImage* pInputImg, MyEdgeFilterType filterType) {
-
-	BitmapImage* pReturnImg = NULL;
-
-	/*引数チェック*/
-	if (!pInputImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		goto error;
-	}
-	if (8 != pInputImg->bitCount) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		goto error;
-	}
-	if (NOT_COMPRESSION != pInputImg->compression) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		goto error;
-	}
-
-	pReturnImg = bitmapImage();
-	pReturnImg->bitCount = 8;
-	pReturnImg->compression = NOT_COMPRESSION;
-
-	MY_ERROR_CODE error = SUCCESS;
-
-	switch (filterType)
-	{
-	case PREWITT:
-		error = prewittFilter(pReturnImg, pInputImg);
-		if (error) {
-			goto error;
-		}
-		break;
-	case SOBEL:
-		error = sobelFilter(pReturnImg, pInputImg);
-		if (error) {
-			goto error;
-		}
-		break;
-	case LOG:
-		error = LogFilter5(pReturnImg, pInputImg);
-		if (error) {
-			goto error;
-		}
-		break;
-	default:
-		error = ARGUMENT_ERROR;
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		goto error;
-	}
-
-	return pReturnImg;
-
-error:
-	if (pReturnImg) {
-		BitmapImageRelease(&pReturnImg);
-	}
-	return NULL;
-}
-
-/*prewittフィルタの処理を行う関数*/
-static MyErrorCode prewittFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg) {
-
-	MyErrorCode ret = SUCCESS;
-
-	unsigned long heightOfInpImg = abs(pInputImg->height);
-	unsigned long widthOfInpImg = pInputImg->width;
-
-	/*引数チェック*/
-	if (!pReturnImg || !pInputImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (8 != pReturnImg->bitCount || 8 != pInputImg->bitCount) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (NOT_COMPRESSION != pReturnImg->compression || NOT_COMPRESSION != pInputImg->compression) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (3 > heightOfInpImg || 3 > widthOfInpImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-
-	pReturnImg->height = heightOfInpImg - 2;
-	pReturnImg->width = widthOfInpImg - 2;
-
-	unsigned long heightOfRetImg = pReturnImg->height;
-	unsigned long widthOfRetImg = pReturnImg->width;
-
-	/*ピクセル数を計算*/
-	unsigned long numberOfPixel = widthOfRetImg * heightOfRetImg;
-
-	/*画像領域の確保*/
-	char* pRetImgData = (char*)malloc(numberOfPixel);
-	if (!pRetImgData) {
-		ret = MALLOC_ERROR;
-		free(pRetImgData);
-		printErrorMessage(MALLOC_ERROR, __FILE__, __LINE__);
-		goto END;
-	}
-	memset(pRetImgData, 0x00, numberOfPixel);
-	pReturnImg->pImageData = pRetImgData;
-
-	unsigned char* pInpImaData = pInputImg->pImageData;
-
-	unsigned long lineFeedOfInpImg = widthOfInpImg;
-	unsigned long lineFeedOfRetImg = widthOfRetImg;
-	unsigned long rowIndexStartOfInpImg = 0;
-	unsigned long rowIndexStartOfRetImg = 0;
-	unsigned long indexOfInpImg = 0;
-	unsigned long indexOfRetImg = 0;
-
-	double gx = 0;
-	double gy = 0;
-
-	for (unsigned long y = 0; y < heightOfRetImg; y++) {
-		rowIndexStartOfInpImg = y * lineFeedOfInpImg;
-		rowIndexStartOfRetImg = y * lineFeedOfRetImg;
-
-		for (unsigned long x = 0; x < widthOfRetImg; x++) {
-			indexOfInpImg = x + rowIndexStartOfInpImg;
-			indexOfRetImg = x + rowIndexStartOfRetImg;
-
-			gx = -pInpImaData[indexOfInpImg];
-			gy = pInpImaData[indexOfInpImg];
-
-			gy += pInpImaData[indexOfInpImg + 1];
-
-			gx += pInpImaData[indexOfInpImg + 2];
-			gy += pInpImaData[indexOfInpImg + 2];
-
-			gx += -pInpImaData[indexOfInpImg + lineFeedOfInpImg] + pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg];
-
-			gx += -pInpImaData[indexOfInpImg + lineFeedOfInpImg * 2];
-			gy += -pInpImaData[indexOfInpImg + lineFeedOfInpImg * 2];
-
-			gy += -pInpImaData[indexOfInpImg + 1 + lineFeedOfInpImg * 2];
-
-			gx += pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 2];
-			gy += -pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 2];
-
-			/*マグニチュードを計算し、255に規格化*/
-			pRetImgData[indexOfRetImg] = (unsigned char)(sqrt(gx*gx + gy * gy) * 255 / 1081);
-		}
-	}
-
-END:
-	return ret;
-}
-
-/*sobelフィルタの処理を行う関数*/
-static MyErrorCode sobelFilter(BitmapImage* pReturnImg, BitmapImage* pInputImg) {
-
-	MyErrorCode ret = SUCCESS;
-
-	unsigned long heightOfInpImg = abs(pInputImg->height);
-	unsigned long widthOfInpImg = pInputImg->width;
-
-	/*引数チェック*/
-	if (!pReturnImg || !pInputImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (8 != pReturnImg->bitCount || 8 != pInputImg->bitCount) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (NOT_COMPRESSION != pReturnImg->compression || NOT_COMPRESSION != pInputImg->compression) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (3 > heightOfInpImg || 3 > widthOfInpImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-
-	pReturnImg->height = heightOfInpImg - 2;
-	pReturnImg->width = widthOfInpImg - 2;
-
-	unsigned long heightOfRetImg = pReturnImg->height;
-	unsigned long widthOfRetImg = pReturnImg->width;
-
-	/*ピクセル数を計算*/
-	unsigned long numberOfPixel = widthOfRetImg * heightOfRetImg;
-
-	/*画像領域の確保*/
-	char* pRetImgData = (char*)malloc(numberOfPixel);
-	if (!pRetImgData) {
-		ret = MALLOC_ERROR;
-		free(pRetImgData);
-		printErrorMessage(MALLOC_ERROR, __FILE__, __LINE__);
-		goto END;
-	}
-	memset(pRetImgData, 0x00, numberOfPixel);
-	pReturnImg->pImageData = pRetImgData;
-
-	unsigned char* pInpImaData = pInputImg->pImageData;
-
-	unsigned long lineFeedOfInpImg = widthOfInpImg;
-	unsigned long lineFeedOfRetImg = widthOfRetImg;
-	unsigned long rowIndexStartOfInpImg = 0;
-	unsigned long rowIndexStartOfRetImg = 0;
-	unsigned long indexOfInpImg = 0;
-	unsigned long indexOfRetImg = 0;
-
-	double gx = 0;
-	double gy = 0;
-
-	for (unsigned long y = 0; y < heightOfRetImg; y++) {
-		rowIndexStartOfInpImg = y * lineFeedOfInpImg;
-		rowIndexStartOfRetImg = y * lineFeedOfRetImg;
-
-		for (unsigned long x = 0; x < widthOfRetImg; x++) {
-			indexOfInpImg = x + rowIndexStartOfInpImg;
-			indexOfRetImg = x + rowIndexStartOfRetImg;
-
-			gx = -pInpImaData[indexOfInpImg];
-			gy = pInpImaData[indexOfInpImg];
-
-			gy += 2 * pInpImaData[indexOfInpImg + 1];
-
-			gx += pInpImaData[indexOfInpImg + 2];
-			gy += pInpImaData[indexOfInpImg + 2];
-
-			gx += -2 * pInpImaData[indexOfInpImg + lineFeedOfInpImg] + 2 * pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg];
-
-			gx += -pInpImaData[indexOfInpImg + lineFeedOfInpImg * 2];
-			gy += -pInpImaData[indexOfInpImg + lineFeedOfInpImg * 2];
-
-			gy += -2 * pInpImaData[indexOfInpImg + 1 + lineFeedOfInpImg * 2];
-
-			gx += pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 2];
-			gy += -pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 2];
-
-			/*マグニチュードを計算し、255に規格化*/
-			pRetImgData[indexOfRetImg] = (unsigned char)(sqrt(gx*gx + gy * gy) * 255 / 721);
-		}
-	}
-
-END:
-	return ret;
-}
-
-/*5×5のLaplacian Of Gaussianフィルタの処理を行う関数*/
-static MyErrorCode LogFilter5(BitmapImage* pReturnImg, BitmapImage* pInputImg) {
-
-	MyErrorCode ret = SUCCESS;
-	unsigned long heightOfInpImg = abs(pInputImg->height);
-	unsigned long widthOfInpImg = pInputImg->width;
-
-	if (!pReturnImg || !pInputImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (8 != pReturnImg->bitCount || 8 != pInputImg->bitCount) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (NOT_COMPRESSION != pReturnImg->compression || NOT_COMPRESSION != pInputImg->compression) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-	if (5 > heightOfInpImg || 5 > widthOfInpImg) {
-		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
-		ret = ARGUMENT_ERROR;
-		goto END;
-	}
-
-	pReturnImg->height = heightOfInpImg - 4;
-	pReturnImg->width = widthOfInpImg - 4;
-
-	unsigned long heightOfRetImg = pReturnImg->height;
-	unsigned long widthOfRetImg = pReturnImg->width;
-
-	/*ピクセル数を計算*/
-	unsigned long numberOfPixel = widthOfRetImg * heightOfRetImg;
-
-	/*画像領域の確保*/
-	char* pRetImgData = (char*)malloc(numberOfPixel);
-	if (!pRetImgData) {
-		ret = MALLOC_ERROR;
-		free(pRetImgData);
-		printErrorMessage(MALLOC_ERROR, __FILE__, __LINE__);
-		goto END;
-	}
-	memset(pRetImgData, 0x00, numberOfPixel);
-	pReturnImg->pImageData = pRetImgData;
-
-	unsigned char* pInpImaData = pInputImg->pImageData;
-
-	unsigned long lineFeedOfInpImg = widthOfInpImg;
-	unsigned long lineFeedOfRetImg = widthOfRetImg;
-	unsigned long rowIndexStartOfInpImg = 0;
-	unsigned long rowIndexStartOfRetImg = 0;
-	unsigned long indexOfInpImg = 0;
-	unsigned long indexOfRetImg = 0;
-
-	int m = 0;
-
-	for (unsigned long y = 0; y < heightOfRetImg; y++) {
-		rowIndexStartOfInpImg = y * lineFeedOfInpImg;
-		rowIndexStartOfRetImg = y * lineFeedOfRetImg;
-
-		for (unsigned long x = 0; x < widthOfRetImg; x++) {
-			indexOfInpImg = x + rowIndexStartOfInpImg;
-			indexOfRetImg = x + rowIndexStartOfRetImg;
-
-			/*フィルタ1行目*/
-			m = -pInpImaData[indexOfInpImg + 2];
-
-			/*フィルタ2行目*/
-			m += -pInpImaData[indexOfInpImg + 1 + lineFeedOfInpImg] - 2 * pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg] - pInpImaData[indexOfInpImg + 3 + lineFeedOfInpImg];
-
-			/*フィルタ3行目*/
-			m += -pInpImaData[indexOfInpImg + lineFeedOfInpImg * 2] - 2 * pInpImaData[indexOfInpImg + 1 + lineFeedOfInpImg * 2] + 16 * pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 2] - 2 * pInpImaData[indexOfInpImg + 3 + lineFeedOfInpImg * 2] - pInpImaData[indexOfInpImg + 4 + lineFeedOfInpImg * 2];
-
-			/*フィルタ4行目*/
-			m += -pInpImaData[indexOfInpImg + 1 + lineFeedOfInpImg * 3] - 2 * pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 3] - pInpImaData[indexOfInpImg + 3 + lineFeedOfInpImg * 3];
-
-			/*フィルタ5行目*/
-			m += -pInpImaData[indexOfInpImg + 2 + lineFeedOfInpImg * 4];
-
-			/*255に規格化*/
-			pRetImgData[indexOfRetImg] = (unsigned char)(abs(m) / 16);
-		}
-	}
-
-END:
-	return ret;
-}
-
-/*
 ノイズ除去処理を行う関数
 【引数】
 	[i] BitmapImage*		ノイズ除去を行いたい画像データ（8bit形式）
@@ -489,12 +134,12 @@ END:
 【返り値】
 	[o] BitmapImage*		ノイズ除去を行った結果の画像データ（8bit形式）
 */
-BitmapImage* BitmapImage_ReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReductionFilterType filterType, unsigned long kernelSize) {
+BitmapImage* BitmapImageReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReductionFilterType filterType, unsigned long kernelSize) {
 
 	BitmapImage* pReturnImg = NULL;
 
-	unsigned long heightOfInpImg = abs(pInputImg->height);
-	unsigned long widthOfInpImg = pInputImg->width;
+	unsigned long height = abs(pInputImg->height);
+	unsigned long width = pInputImg->width;
 
 	/*引数チェック*/
 	if (!pInputImg) {
@@ -513,7 +158,7 @@ BitmapImage* BitmapImage_ReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReduct
 		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
 		goto error;
 	}
-	if (kernelSize > heightOfInpImg || kernelSize > widthOfInpImg) {
+	if (kernelSize > height || kernelSize > width) {
 		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
 		goto error;
 	}
@@ -521,8 +166,8 @@ BitmapImage* BitmapImage_ReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReduct
 	pReturnImg = bitmapImage();
 	pReturnImg->bitCount = 8;
 	pReturnImg->compression = NOT_COMPRESSION;
-	pReturnImg->height = heightOfInpImg - (kernelSize - 1);
-	pReturnImg->width = widthOfInpImg - (kernelSize - 1);
+	pReturnImg->height = height;
+	pReturnImg->width = width;
 
 	MY_ERROR_CODE error = SUCCESS;
 
@@ -560,8 +205,8 @@ static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInpu
 
 	MyErrorCode ret = SUCCESS;
 
-	unsigned long heightOfInpImg = abs(pInputImg->height);
-	unsigned long widthOfInpImg = pInputImg->width;
+	unsigned long height = abs(pInputImg->height);
+	unsigned long width = pInputImg->width;
 
 	/*引数チェック*/
 	if (!pReturnImg || !pInputImg) {
@@ -584,17 +229,14 @@ static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInpu
 		ret = ARGUMENT_ERROR;
 		goto END;
 	}
-	if (kernelSize > heightOfInpImg || kernelSize > widthOfInpImg) {
+	if (kernelSize > height || kernelSize > width) {
 		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
 		ret = ARGUMENT_ERROR;
 		goto END;
 	}
 
-	unsigned long heightOfRetImg = pReturnImg->height;
-	unsigned long widthOfRetImg = pReturnImg->width;
-
 	/*ピクセル数を計算*/
-	unsigned long numberOfPixel = widthOfRetImg * heightOfRetImg;
+	unsigned long numberOfPixel = width * height;
 
 	/*画像領域の確保*/
 	char* pRetImgData = (char*)malloc(numberOfPixel);
@@ -609,33 +251,34 @@ static MY_ERROR_CODE meanNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pInpu
 
 	unsigned char* pInpImaData = pInputImg->pImageData;
 
-	unsigned long lineFeedOfInpImg = widthOfInpImg;
-	unsigned long lineFeedOfRetImg = widthOfRetImg;
-	unsigned long rowIndexStartOfInpImg = 0;
-	unsigned long rowIndexStartOfRetImg = 0;
-	unsigned long indexOfInpImg = 0;
-	unsigned long indexOfRetImg = 0;
+	unsigned long lineFeed = width;
+	unsigned long rowIndexStart = 0;
+	unsigned long index = 0;
 
 	/*カーネルの要素数*/
 	unsigned long elementsNumberOfKernel = kernelSize * kernelSize;
 
 	unsigned long sumInKernel = 0;
 
-	for (unsigned long y = 0; y < heightOfRetImg; y++) {
-		rowIndexStartOfInpImg = y * lineFeedOfInpImg;
-		rowIndexStartOfRetImg = y * lineFeedOfRetImg;
+	/*フィルタをかけたことによって削れる画像端のサイズ*/
+	unsigned long paddingSizeByFilter = (kernelSize - 1) / 2;
 
-		for (unsigned long x = 0; x < widthOfRetImg; x++) {
-			indexOfInpImg = x + rowIndexStartOfInpImg;
-			indexOfRetImg = x + rowIndexStartOfRetImg;
+	/*縦方向と横方向、それぞれのループ回数*/
+	unsigned long numberOfLoopOfY = height - (kernelSize - 1);
+	unsigned long numberOfLoopOfX = width - (kernelSize - 1);
+
+	for (unsigned long y = 0; y < numberOfLoopOfY; y++ , rowIndexStart += lineFeed) {
+
+		for (unsigned long x = 0; x < numberOfLoopOfX; x++) {
+			index = x + rowIndexStart;
 
 			sumInKernel = 0;
 			for (unsigned long yOfKarnel = 0; yOfKarnel < kernelSize; yOfKarnel++) {
 				for (unsigned long xOfKarnel = 0; xOfKarnel < kernelSize; xOfKarnel++) {
-					sumInKernel += pInpImaData[indexOfInpImg + xOfKarnel + yOfKarnel * lineFeedOfInpImg];
+					sumInKernel += pInpImaData[index + xOfKarnel + yOfKarnel * lineFeed];
 				}
 			}
-			pRetImgData[indexOfRetImg] = (char)(sumInKernel / elementsNumberOfKernel);
+			pRetImgData[index + paddingSizeByFilter + lineFeed * paddingSizeByFilter] = (char)(sumInKernel / elementsNumberOfKernel);
 		}
 	}
 
@@ -651,8 +294,8 @@ static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pIn
 	/*カーネルの要素配列*/
 	unsigned char* elementArray = NULL;
 
-	unsigned long heightOfInpImg = abs(pInputImg->height);
-	unsigned long widthOfInpImg = pInputImg->width;
+	unsigned long height = abs(pInputImg->height);
+	unsigned long width = pInputImg->width;
 
 	/*引数チェック*/
 	if (!pReturnImg || !pInputImg) {
@@ -675,17 +318,14 @@ static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pIn
 		ret = ARGUMENT_ERROR;
 		goto END;
 	}
-	if (kernelSize > heightOfInpImg || kernelSize > widthOfInpImg) {
+	if (kernelSize > height || kernelSize > width) {
 		printErrorMessage(ARGUMENT_ERROR, __FILE__, __LINE__);
 		ret = ARGUMENT_ERROR;
 		goto END;
 	}
 
-	unsigned long heightOfRetImg = pReturnImg->height;
-	unsigned long widthOfRetImg = pReturnImg->width;
-
 	/*ピクセル数を計算*/
-	unsigned long numberOfPixel = widthOfRetImg * heightOfRetImg;
+	unsigned long numberOfPixel = width * height;
 
 	/*画像領域の確保*/
 	char* pRetImgData = (char*)malloc(numberOfPixel);
@@ -700,12 +340,9 @@ static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pIn
 
 	unsigned char* pInpImaData = pInputImg->pImageData;
 
-	unsigned long lineFeedOfInpImg = widthOfInpImg;
-	unsigned long lineFeedOfRetImg = widthOfRetImg;
-	unsigned long rowIndexStartOfInpImg = 0;
-	unsigned long rowIndexStartOfRetImg = 0;
-	unsigned long indexOfInpImg = 0;
-	unsigned long indexOfRetImg = 0;
+	unsigned long lineFeed = width;
+	unsigned long rowIndexStart = 0;
+	unsigned long index = 0;
 
 	/*カーネルの要素数*/
 	unsigned long elementsNumberOfKernel = kernelSize * kernelSize;
@@ -718,25 +355,29 @@ static MY_ERROR_CODE medianNoiseFilter(BitmapImage* pReturnImg, BitmapImage* pIn
 	}
 	memset(elementArray, 0x00, elementsNumberOfKernel);
 
+	/*フィルタをかけたことによって削れる画像端のサイズ*/
+	unsigned long paddingSizeByFilter = (kernelSize - 1) / 2;
+
+	/*縦方向と横方向、それぞれのループ回数*/
+	unsigned long numberOfLoopOfY = height - (kernelSize - 1);
+	unsigned long numberOfLoopOfX = width - (kernelSize - 1);
+
 	unsigned long count = 0;
 
-	for (unsigned long y = 0; y < heightOfRetImg; y++) {
-		rowIndexStartOfInpImg = y * lineFeedOfInpImg;
-		rowIndexStartOfRetImg = y * lineFeedOfRetImg;
+	for (unsigned long y = 0; y < numberOfLoopOfY; y++ , rowIndexStart += lineFeed) {
 
-		for (unsigned long x = 0; x < widthOfRetImg; x++) {
-			indexOfInpImg = x + rowIndexStartOfInpImg;
-			indexOfRetImg = x + rowIndexStartOfRetImg;
+		for (unsigned long x = 0; x < numberOfLoopOfX; x++) {
+			index = x + rowIndexStart;
 
 			count = 0;
 			for (unsigned long yOfKarnel = 0; yOfKarnel < kernelSize; yOfKarnel++) {
 				for (unsigned long xOfKarnel = 0; xOfKarnel < kernelSize; xOfKarnel++) {
-					elementArray[count] = pInpImaData[indexOfInpImg + xOfKarnel + yOfKarnel * lineFeedOfInpImg];
+					elementArray[count] = pInpImaData[index + xOfKarnel + yOfKarnel * lineFeed];
 					count += 1;
 				}
 			}
 			qsort(elementArray, elementsNumberOfKernel, sizeof(unsigned char), compareUnsignedChar);
-			pRetImgData[indexOfRetImg] = elementArray[elementsNumberOfKernel / 2], sizeof(char);
+			pRetImgData[index + paddingSizeByFilter + lineFeed * paddingSizeByFilter] = elementArray[elementsNumberOfKernel / 2], sizeof(char);
 		}
 	}
 

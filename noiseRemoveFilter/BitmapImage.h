@@ -18,13 +18,6 @@ typedef struct {
 	char* pImageData;
 }BitmapImage;
 
-/*エッジ検出の種類*/
-typedef enum {
-	PREWITT, /*プリューウィット法*/
-	SOBEL, /*ソーベル法*/
-	LOG /*ガウスのラプラシアン法*/
-}MyEdgeFilterType;
-
 /*ノイズフィルタの種類*/
 typedef enum {
 	MEAN, /*平均値法*/
@@ -33,9 +26,8 @@ typedef enum {
 
 BitmapImage* bitmapImage();
 void BitmapImageRelease(BitmapImage** ppBitmapImage);
-MY_ERROR_CODE BitmapImage_load(BitmapImage* pBitmapImage, FILE* pFile);
-MY_ERROR_CODE BitmapImage_to8bitBitmapFile(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
-BitmapImage* BitmapImage_EdgeDetecter(BitmapImage* pInputImg, MyEdgeFilterType filterType);
-BitmapImage* BitmapImage_ReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReductionFilterType filterType, unsigned long kernelSize);
+MY_ERROR_CODE BitmapImageLoad(BitmapImage* pBitmapImage, FILE* pFile);
+MY_ERROR_CODE BitmapImageTo8bitBitmapFile(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
+BitmapImage* BitmapImageReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReductionFilterType filterType, unsigned long kernelSize);
 
 #endif

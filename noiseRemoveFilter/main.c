@@ -9,7 +9,7 @@
 #include "commonFunctions.h"
 
 /*変換する画像の指定*/
-#define INPUT_FILE_NAME "test.bmp"
+#define INPUT_FILE_NAME "Lenna.bmp"
 
 int main() {
 
@@ -24,7 +24,7 @@ int main() {
 
 	/*インプットファイルとアウトプットファイルの準備*/
 	char inputFileName[] = INPUT_FILE_NAME;
-	char* outputFileName = strJoin("mean2_", inputFileName);
+	char* outputFileName = strJoin("convert_", inputFileName);
 	if (!outputFileName) {
 		ret = 1;
 		goto END;
@@ -57,17 +57,22 @@ int main() {
 	}
 
 	/*画像ファイルから、必要な情報を構造体へ読み込む*/
-	error = BitmapImage_load(p8bitBitmapImage, pInputFile);
+	error = BitmapImageLoad(p8bitBitmapImage, pInputFile);
 	if (error) {
 		ret = 1;
 		goto END;
 	}
 
 	/*ノイズ除去*/
-	pOutputBitmapImage = BitmapImage_ReduceNoiseFilter(p8bitBitmapImage, MEDIAN , 3);
+	pOutputBitmapImage = BitmapImageReduceNoiseFilter(p8bitBitmapImage, MEDIAN ,3);
+	if (!pOutputBitmapImage) {
+		/*除去に失敗した場合の処理*/
+		ret = 1;
+		goto END;
+	}
 
 	/*変換後のファイルを出力*/
-	error = BitmapImage_to8bitBitmapFile(pOutputBitmapImage, pOutputFile);
+	error = BitmapImageTo8bitBitmapFile(pOutputBitmapImage, pOutputFile);
 	if (error) {
 		/*変換に失敗した場合の処理*/
 		ret = 1;
