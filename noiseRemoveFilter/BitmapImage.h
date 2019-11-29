@@ -29,6 +29,6 @@ BitmapImage* bitmapImage();
 void BitmapImageRelease(BitmapImage** ppBitmapImage);
 MY_ERROR_CODE BitmapImageLoad(BitmapImage* pBitmapImage, FILE* pFile);
 MY_ERROR_CODE BitmapImageTo8bitBitmapFile(BitmapImage* p8bitBitmapImage, FILE* pOutPutFile);
-BitmapImage* BitmapImageReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReductionFilterType filterType, unsigned long kernelSize);
+BitmapImage* BitmapImageReduceNoiseFilter(BitmapImage* pInputImg, MyNoiseReductionFilterType filterType, unsigned long kernelSizeX, unsigned long kernelSizeY);
 
 #endif

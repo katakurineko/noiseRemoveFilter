@@ -27,7 +27,7 @@ int main() {
 
 	/*インプットファイルとアウトプットファイルの準備*/
 	char inputFileName[] = INPUT_FILE_NAME;
-	char* outputFileName = strJoin("convert_", inputFileName);
+	char* outputFileName = strJoin("median_", inputFileName);
 	if (!outputFileName) {
 		ret = 1;
 		goto END;
@@ -70,10 +70,10 @@ int main() {
 	clock_t start;
 	clock_t end;
 	start = clock();
-	for (int i = 0; i < 10000; i++) {
+	for (int i = 0; i < 1; i++) {
 
 		/*ノイズ除去*/
-		pOutputBitmapImage = BitmapImageReduceNoiseFilter(p8bitBitmapImage, MEAN, 3);
+		pOutputBitmapImage = BitmapImageReduceNoiseFilter(p8bitBitmapImage, MEDIAN, 5,3);
 		if (!pOutputBitmapImage) {
 			/*除去に失敗した場合の処理*/
 			ret = 1;
